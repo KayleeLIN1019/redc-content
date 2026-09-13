@@ -1,0 +1,203 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Fira Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, SFMono-Regular, monospace;
+
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-primary: #1e293b;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #334155;
+  --color-secondary-foreground: #ffffff;
+  --color-cta: #1e293b;
+  --color-cta-foreground: #ffffff;
+  --color-accent: #16a34a;
+  --color-accent-foreground: #ffffff;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-border: #e2e8f0;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --color-ring: #1e293b;
+  --color-warning: #d97706;
+}
+
+:root {
+  --space-xs: 0.125rem;
+  --space-sm: 0.25rem;
+  --space-md: 0.5rem;
+  --space-lg: 0.75rem;
+  --space-xl: 1rem;
+  --space-2xl: 1.5rem;
+  --space-3xl: 2rem;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.08);
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-foreground);
+  background-color: var(--color-background);
+  background-image:
+    radial-gradient(900px 420px at 8% -8%, rgba(22, 163, 74, 0.08), transparent 50%),
+    radial-gradient(720px 380px at 100% 0%, rgba(14, 165, 233, 0.06), transparent 46%),
+    radial-gradient(620px 360px at 78% 112%, rgba(22, 163, 74, 0.05), transparent 50%);
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+.glass {
+  background: color-mix(in srgb, var(--color-card) 82%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-md);
+}
+
+.glass-strong {
+  background: color-mix(in srgb, var(--color-card) 92%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn {
+  display: inline-flex;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25;
+  transition: background-color 200ms ease, border-color 200ms ease, opacity 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn-primary {
+  background: var(--color-cta);
+  color: var(--color-cta-foreground);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0f172a;
+}
+
+.btn-secondary {
+  background: #ffffff;
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-muted);
+  border-color: #cbd5e1;
+}
+
+.btn-ghost {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.btn-danger {
+  background: transparent;
+  color: #b91c1c;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+  color: #991b1b;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: #ffffff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-foreground);
+  outline: none;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.field::placeholder {
+  color: color-mix(in srgb, var(--color-muted-foreground) 80%, transparent);
+}
+
+.field:focus {
+  border-color: var(--color-cta);
+  box-shadow: 0 0 0 3px rgba(30, 41, 59, 0.16);
+}
+
+.chip {
+  display: inline-flex;
+  cursor: pointer;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--color-muted-foreground);
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: #cbd5e1;
+  color: var(--color-foreground);
+}
+
+.chip-active {
+  border-color: transparent;
+  background: var(--color-cta);
+  color: var(--color-cta-foreground);
+}
+
+.chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,25 @@
+# UI/UX Pro Max Design Guidelines for Cursor
+
+You act as a Principal UI/UX Designer and Senior Frontend Engineer. When generating or refactoring React / Tailwind UI components for this project, always adhere to the following rules and the persisted design system in `design-system/redc/MASTER.md`.
+
+1. **Design System & Style**:
+   - Light Glassmorphism operations console only (dense dashboard, variance 4, motion 3). Never switch this product to a dark canvas.
+   - Surfaces: frosted white glass (`backdrop-blur` 10–20px), 1px slate borders, soft shadows. No layout-shifting hover transforms.
+   - Cards: `rounded-xl`, glass panel, `shadow-md`. Use shared primitives from `frontend/src/ui.tsx`.
+
+2. **Color Palette** (semantic tokens in `frontend/src/index.css`):
+   - Canvas `#F8FAFC`, card `#FFFFFF`, muted `#F1F5F9`, border `#E2E8F0`, text `#0F172A` / muted `#64748B`.
+   - Primary CTA / buttons: office slate `#1E293B` on white. Do not use blue or green for buttons.
+   - Status only: Emerald for published/success, Amber for drafts/warnings, Slate for unused/neutral. Destructive `#DC2626`.
+
+3. **Typography & Layout**:
+   - Headings: Fira Sans semibold. Numbers, paths, KPIs: Fira Code (`font-mono`).
+   - Dense spacing scale: 2/4/8/12/16/24/32. Page padding `px-4 py-6 md:px-6 md:py-8`.
+   - Hierarchy: page title `text-xl font-semibold`, secondary labels `text-xs text-muted-foreground`.
+
+4. **Interactive UX**:
+   - Empty states with Lucide icons and a next action. Loading uses skeletons + `aria-busy`, not blank screens.
+   - `cursor-pointer` on all clickable elements; visible `focus-visible` rings; `prefers-reduced-motion` respected.
+   - Hover/transition 150–300ms via opacity/border/background only.
+   - Alerts use `role="alert"`. Status meaning is never color-only.
+   - Responsive: 375 / 768 / 1024 / 1440. Sidebar collapses to a drawer below `md`.

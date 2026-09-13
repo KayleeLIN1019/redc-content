@@ -1,0 +1,108 @@
+# 自动化内容生成与素材管理系统 PRD
+
+## 1. 项目背景与目标
+本项目旨在搭建一套供长期维护与使用的自动化内容生产与数据追踪系统。
+核心流程：竞品内容解析/OCR $\rightarrow$ AI 根据 IP 规则改写文案 $\rightarrow$ 素材库（主/次图）关联组装 $\rightarrow$ 一键按规范自动打包导出 Zip $\rightarrow$ 结合素材消耗量进行收益计算与数据统计看板。
+
+---
+
+## 2. 核心架构与技术栈建议
+- **前端 (Frontend)**：React / Vue 3 + Tailwind CSS（支持交互式看板、图片上传预览、富文本二次修改）
+- **后端 (Backend)**：Node.js (Express/Fastify) 或 Python (FastAPI)
+- **数据库 (Database)**：SQLite 或 PostgreSQL
+- **外部接口 (API)**：调用 OpenAI / Claude / 深度求索等 LLM API 执行文案改写；集成本地 Zip 文件打包组件
+
+---
+
+## 3. 数据库表结构设计 (Database Schema)
+
+### 3.1 `assets`（素材库表）
+- `id`: String / Auto Increment Primary Key
+- `type`: Enum ('primary', 'secondary') // 主图 / 次图
+- `file_path`: String                   // 图片存储路径
+- `category_tags`: JSON / Array         // 次图专属：10 种分类标签
+- `is_used`: Boolean (Default: false)   // 主图专用：标记是否已被使用过（主图一次性不可复用；次图可无限复用）
+- `created_at`: Timestamp
+
+### 3.2 `competitor_notes`（竞品解析与改写表）
+- `id`: String / Auto Increment Primary Key
+- `raw_link`: String NULLable           // 竞品原文链接
+- `raw_content`: Text                   // 解析内容、手动粘贴文本或 OCR 识别出的竞品原文
+- `ai_draft`: Text                      // AI 根据 IP Skill Prompt 初始生成的改写文案
+- `final_content`: Text                 // 人工二次微调确认后的最终定稿文案
+- `ip_name`: String                      // 归属 IP 名称
+- `created_at`: Timestamp
+
+### 3.3 `content_packages`（内容组装与交付打包表）
+- `id`: String / Auto Increment Primary Key
+- `title`: String                        // 内容标题
+- `ip_name`: String                      // IP 名称（如：桃子）
+- `benefit_point`: String                // 利益点（如：装企承诺、清单报价）
+- `primary_asset_id`: FK -> assets.id    // 绑定的主图 ID (仅 1 张)
+- `secondary_asset_ids`: JSON Array      // 绑定的次图 ID 列表 (多张)
+- `competitor_note_id`: FK -> competitor_notes.id // 绑定的改写文案 ID
+- `export_folder_name`: String          // 生成的打包文件夹名（格式：日期+IP名，如 20260908-桃子）
+- `status`: Enum ('draft', 'exported', 'published') // 内容状态流转
+- `publish_time`: Timestamp NULLable     // 笔记发布时间（后续手动补填）
+- `note_id`: String NULLable             // 发布的笔记 ID（后续手动补填）
+- `created_at`: Timestamp
+
+### 3.4 `system_settings`（系统设置表）
+- `api_key`: String                      // LLM API Key
+- `api_base_url`: String                 // API Base URL
+- `prompt_skills`: JSON                  // 针对不同 IP 的改写 Skill Prompt 规则库
+- `primary_price`: Decimal (Default: 0)  // 结算规则：单张主图单价
+- `secondary_price`: Decimal (Default: 0)// 结算规则：单张次图单价
+
+---
+
+## 4. 核心功能模块与业务逻辑 (Functional Requirements)
+
+### 模块一：素材库管理 (Asset Manager)
+1. **主图管理**：
+   - 上传时标记类型为 `primary`。
+   - 一旦该主图被绑定到 `content_packages`，数据库状态更新为 `is_used = true`。
+   - 在选择主图构建新内容时，已被使用的主图自动隐藏或置灰禁选。
+2. **次图管理**：
+   - 上传时标记类型为 `secondary`，允许选择并打上 10 种内置分类标签中的一个或多个。
+   - 次图不受 `is_used` 约束，支持在不同内容中无限次选择与复用。
+
+### 模块二：竞品改写与 AI 引擎 (AI Content Generator)
+1. **多模式抓取/输入**：支持直接粘贴竞品链接，同时提供“直接粘贴文本 / 图片 OCR 识别”备用入口（防抓取失败）。
+2. **AI 改写与技能库**：调用配置好的 LLM API，结合 `system_settings` 中设定的对应 IP 技能 Prompt（Skill Rules）生成符合 IP 人设的文案。
+3. **人工校验修改**：界面提供可视化富文本/文本编辑框，必须允许用户对 AI 生成的初始文案进行二次人工修改与手动确认。
+
+### 模块三：内容组装与一键打包 (Content Assembler & Exporter)
+1. **组合挑选**：用户在界面勾选 `已确认的改写文案` + `1 张可用主图` + `N 张次图` + `确定利益点`。
+2. **打包与文件夹层级构建算法**：
+   - 系统在输出目录创建一级文件夹，命名格式为：`[YYYYMMDD]+[IP名]`（例：`20260908-桃子`）。
+   - 一级菜单下按生产顺序创建内容文件夹，子项文件夹及文件命名格式为：`[顺序序号]-[IP名]-[利益点]`（例：`1-桃子-装企承诺`、`2-桃子-清单报价`）。
+   - 将确认后的文案导出为 `.txt` 或 `.md`，连同选中的主图与次图压缩为一个完整的 `.zip` 包供下载。
+3. **打包后续动作**：压缩完成后，系统自动将该主图标记为 `is_used = true`，并将该内容套件状态更新为 `exported`。
+
+### 模块四：数据看板与收益仪表盘 (Analytics Dashboard)
+1. **多维度数据统计**：
+   - 总产出内容篇数
+   - 主图消耗总量（张）、次图使用总量（张）
+   - 各利益点（如装企承诺、清单报价等）的内容产出分布情况
+   - 已发布篇数 vs 未发布篇数统计
+2. **收益实时核算**：
+   - 公式：$\text{预计总收入} = (\text{消耗主图张数} \times \text{主图单价}) + (\text{使用次图张数} \times \text{次图单价})$
+3. **发布状态补全交互**：
+   - 提供内容列表卡片，允许用户快速勾选更改状态为 `已发布 (published)`，并补填发布时间和笔记 ID。
+
+### 模块五：系统设置 (System Settings)
+1. LLM API Key 与 Base URL 配置。
+2. 各 IP 改写 Skill Prompt 的添加、编辑与维护。
+3. 财务单价设置（主图单价、次图单价，支持修改）。
+
+---
+
+## 5. Codex / Cursor 执行顺序规划 (Implementation Steps)
+
+请按以下顺序分步写代码并联调：
+1. **Step 1**：初始化项目脚手架，创建数据库 Schema 并生成 Migration 文件。
+2. **Step 2**：编写【素材库模块】的后端 API 与前端图片上传、标签打标、主图禁选逻辑。
+3. **Step 3**：编写【竞品改写模块】，接入 LLM API 及前端文案修改编辑框。
+4. **Step 4**：编写【内容打包导出算法】，实现符合 `1-IP名-利益点` 嵌套层级规则的 Zip 压缩与导出功能。
+5. **Step 5**：编写【数据看板模块】，实现计数聚合与预计收益公式计算，并完成发布状态补全的交互。
