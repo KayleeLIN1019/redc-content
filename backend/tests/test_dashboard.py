@@ -24,8 +24,8 @@ def test_dashboard_and_publish(client: tuple[TestClient, sessionmaker]) -> None:
             "secondary_price": 3,
         },
     )
-    primary = _upload(test_client, "primary")
-    secondary = _upload(test_client, "secondary", ["户型图"])
+    primary = _upload(test_client, "primary", ["桃子"])
+    secondary = _upload(test_client, "secondary", ["户型图", "桃子"])
     created = test_client.post(
         "/api/packages",
         json={
@@ -48,9 +48,20 @@ def test_dashboard_and_publish(client: tuple[TestClient, sessionmaker]) -> None:
     assert stats["unpublished_count"] == 1
     assert stats["inventory_primary"] == 2
     assert stats["inventory_secondary"] == 1
+    assert stats["billable_primary"] == 2
+    assert stats["billable_secondary"] == 1
+    assert stats["excluded_count"] == 0
     assert stats["primary_used"] == 1
     assert stats["secondary_used"] == 1
-    assert stats["estimated_revenue"] == 13
+    assert stats["estimated_revenue"] == 23
+    peach = next(item for item in stats["revenue_by_ip"] if item["ip_name"] == "桃子")
+    assert peach["primary_count"] == 1
+    assert peach["secondary_count"] == 1
+    assert peach["primary_revenue"] == 10
+    assert peach["secondary_revenue"] == 3
+    untagged = next(item for item in stats["revenue_by_ip"] if item["ip_name"] == "未打 IP")
+    assert untagged["primary_count"] == 1
+    assert untagged["secondary_count"] == 0
     assert stats["benefit_distribution"][0]["benefit_point"] == "装企承诺"
     assert stats["published_by_benefit"] == []
     by_tag = {item["tag"]: item["count"] for item in stats["assets_by_tag"]}
@@ -69,3 +80,17 @@ def test_dashboard_and_publish(client: tuple[TestClient, sessionmaker]) -> None:
     assert after["published_count"] == 1
     assert after["unpublished_count"] == 0
     assert after["published_by_benefit"] == [{"benefit_point": "装企承诺", "count": 1}]
+
+    excluded = test_client.patch(
+        f"/api/assets/{secondary.json()['id']}",
+        json={"billable": False},
+    )
+    assert excluded.status_code == 200
+    assert excluded.json()["billable"] is False
+    billed = test_client.get("/api/dashboard").json()
+    assert billed["billable_secondary"] == 0
+    assert billed["excluded_count"] == 1
+    assert billed["estimated_revenue"] == 20
+    peach_after = next(item for item in billed["revenue_by_ip"] if item["ip_name"] == "桃子")
+    assert peach_after["secondary_count"] == 0
+    assert peach_after["secondary_revenue"] == 0

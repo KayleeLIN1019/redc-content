@@ -100,13 +100,15 @@ def update_asset(db: Session, asset_id: int, payload: AssetTagsUpdate) -> Asset:
     asset = db.get(Asset, asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="素材不存在")
-    if payload.category_tags is None and payload.type is None:
-        raise HTTPException(status_code=400, detail="请选择要修改的主次图或标签")
+    if payload.category_tags is None and payload.type is None and payload.billable is None:
+        raise HTTPException(status_code=400, detail="请选择要修改的主次图、标签或是否计入收益")
     if payload.category_tags is not None:
         asset.category_tags = validate_category_tags(db, asset.type, payload.category_tags)
         flag_modified(asset, "category_tags")
     if payload.type is not None:
         change_asset_type(db, asset, payload.type)
+    if payload.billable is not None:
+        asset.billable = payload.billable
     db.commit()
     db.refresh(asset)
     return asset
@@ -125,8 +127,8 @@ def batch_update_assets(db: Session, payload: AssetBatchIn) -> list[Asset]:
 
     add_tags = validate_category_tags(db, "any", payload.add_tags) if payload.add_tags else []
     remove_tags = _normalize_remove_tags(payload.remove_tags)
-    if payload.type is None and not add_tags and not remove_tags:
-        raise HTTPException(status_code=400, detail="请选择要修改的主次图或标签")
+    if payload.type is None and payload.billable is None and not add_tags and not remove_tags:
+        raise HTTPException(status_code=400, detail="请选择要修改的主次图、标签或是否计入收益")
 
     if payload.type == "secondary":
         locked = [item for item in asset_ids if item in bound_primary_asset_ids(db)]
@@ -141,6 +143,8 @@ def batch_update_assets(db: Session, payload: AssetBatchIn) -> list[Asset]:
         asset = found[asset_id]
         if payload.type is not None:
             change_asset_type(db, asset, payload.type)
+        if payload.billable is not None:
+            asset.billable = payload.billable
         next_tags = list(asset.category_tags or [])
         if add_tags:
             next_tags = apply_tag_mode(next_tags, add_tags, "add")
@@ -195,7 +199,8 @@ def delete_asset(db: Session, asset_id: int) -> None:
     asset = db.get(Asset, asset_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="素材不存在")
-    raise_if_occupied("素材", packages_for_asset(db, asset.id))
+    if asset.type == "primary":
+        raise_if_occupied("主图", packages_for_asset(db, asset.id))
     path = settings.uploads_dir / asset.file_path
     if path.is_file():
         path.unlink()

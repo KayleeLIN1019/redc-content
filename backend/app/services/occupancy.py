@@ -16,26 +16,14 @@ def package_brief(package: ContentPackage) -> str:
     return f"「{package.title}」({status}，{package.ip_name}·{package.benefit_point})"
 
 
-def _secondary_ids(package: ContentPackage) -> set[int]:
-    ids: set[int] = set()
-    for item in package.secondary_asset_ids or []:
-        try:
-            ids.add(int(item))
-        except (TypeError, ValueError):
-            continue
-    return ids
-
-
 def bound_primary_asset_ids(db: Session) -> set[int]:
     return set(db.scalars(select(ContentPackage.primary_asset_id)))
 
 
 def packages_for_asset(db: Session, asset_id: int) -> list[ContentPackage]:
-    found: list[ContentPackage] = []
-    for package in db.scalars(select(ContentPackage)).all():
-        if package.primary_asset_id == asset_id or asset_id in _secondary_ids(package):
-            found.append(package)
-    return found
+    """Only primary images occupy a kit. Secondaries stay listed but can be deleted."""
+    stmt = select(ContentPackage).where(ContentPackage.primary_asset_id == asset_id)
+    return list(db.scalars(stmt))
 
 
 def packages_for_note(db: Session, note_id: int) -> list[ContentPackage]:
@@ -47,11 +35,20 @@ def raise_if_occupied(kind: str, packages: list[ContentPackage]) -> None:
     if not packages:
         return
     labels = "、".join(package_brief(item) for item in packages)
-    if any(item.status == "published" for item in packages):
-        hint = "已发布套件会留在看板里，不能删绑定的素材或改写。"
+    published = any(item.status == "published" for item in packages)
+    if kind == "主图":
+        hint = (
+            "已发布套件会留在看板里，不能删绑定的主图。"
+            if published
+            else "点「加入待导出套件」就会占用主图，即使还没下载 Zip。请先到「内容打包」删除该套件。"
+        )
     else:
         hint = (
-            "点「加入待导出套件」就会占用，即使还没下载 Zip。"
-            "请先到「内容打包」删除该套件。"
+            "已发布套件会留在看板里，不能删绑定的改写。"
+            if published
+            else (
+                "点「加入待导出套件」就会占用，即使还没下载 Zip。"
+                "请先到「内容打包」删除该套件。"
+            )
         )
     raise HTTPException(status_code=400, detail=f"该{kind}已被套件{labels}占用。{hint}")

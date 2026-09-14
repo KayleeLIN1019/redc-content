@@ -14,3 +14,4 @@ SECONDARY_ASSET_TAGS = [
     "承诺凭证",
     "其它",
 ]
+IP_ASSET_TAGS = ["桃子", "佳佳"]

@@ -10,10 +10,14 @@ import {
   fetchNotes,
   fetchPackages,
   fetchSettings,
+  fetchTags,
+  tagsOfKind,
   type Asset,
   type ContentPackage,
   type Note,
+  type Tag,
 } from './api'
+import { extractPublishTitle } from './noteCopy'
 import {
   Alert,
   Badge,
@@ -21,6 +25,8 @@ import {
   Card,
   CardHint,
   CardTitle,
+  Chip,
+  DropdownSelect,
   EmptyState,
   FieldLabel,
   Input,
@@ -28,18 +34,69 @@ import {
   Select,
 } from './ui'
 
+const UNTAGGED = '__untagged__'
+const ASSET_GRID = 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+
+function noteDisplayTitle(note: Note): string {
+  return extractPublishTitle(note.final_content || '')
+}
+
+function matchesTagFilter(asset: Asset, filter: string): boolean {
+  if (!filter) return true
+  const tags = asset.category_tags || []
+  if (filter === UNTAGGED) return tags.length === 0
+  return tags.includes(filter)
+}
+
+function AssetTile({
+  asset,
+  selected,
+  onClick,
+}: {
+  asset: Asset
+  selected: boolean
+  onClick: () => void
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={selected}
+        className={`w-full cursor-pointer overflow-hidden rounded-xl border transition-colors duration-200 ${
+          selected ? 'border-cta ring-2 ring-cta/30' : 'border-border hover:border-slate-300'
+        }`}
+      >
+        <div className="aspect-[3/4] w-full overflow-hidden bg-muted">
+          <img
+            src={asset.url}
+            alt={asset.original_filename || `素材 ${asset.id}`}
+            className="h-full w-full max-w-full object-cover"
+            loading="lazy"
+          />
+        </div>
+      </button>
+    </li>
+  )
+}
+
 function AssemblePage() {
   const [ipNames, setIpNames] = useState<string[]>([])
   const [ipName, setIpName] = useState('')
   const [title, setTitle] = useState('')
   const [benefitPoint, setBenefitPoint] = useState('')
+  const [benefitDraft, setBenefitDraft] = useState('')
+  const [extraBenefits, setExtraBenefits] = useState<string[]>([])
   const [notes, setNotes] = useState<Note[]>([])
+  const [tags, setTags] = useState<Tag[]>([])
   const [primaries, setPrimaries] = useState<Asset[]>([])
   const [secondaries, setSecondaries] = useState<Asset[]>([])
   const [packages, setPackages] = useState<ContentPackage[]>([])
   const [noteId, setNoteId] = useState<number | null>(null)
   const [primaryId, setPrimaryId] = useState<number | null>(null)
   const [secondaryIds, setSecondaryIds] = useState<number[]>([])
+  const [ipFilter, setIpFilter] = useState('')
+  const [secondaryFilter, setSecondaryFilter] = useState('')
   const [selectedExport, setSelectedExport] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -57,12 +114,57 @@ function AssemblePage() {
     [notes, ipName],
   )
 
+  const benefitOptions = useMemo(() => {
+    const names = new Set<string>()
+    for (const item of packages) {
+      const name = item.benefit_point.trim()
+      if (name) names.add(name)
+    }
+    for (const name of extraBenefits) names.add(name)
+    const current = benefitPoint.trim()
+    if (current) names.add(current)
+    return [...names].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  }, [packages, extraBenefits, benefitPoint])
+
+  const ipTags = useMemo(() => tagsOfKind(tags, 'ip'), [tags])
+  const contentTags = useMemo(() => tagsOfKind(tags, 'content'), [tags])
+  const contentTagNames = useMemo(() => new Set(contentTags.map((tag) => tag.name)), [contentTags])
+
+  const visiblePrimaries = useMemo(
+    () => primaries.filter((asset) => matchesTagFilter(asset, ipFilter)),
+    [primaries, ipFilter],
+  )
+
+  const visibleSecondaries = useMemo(
+    () =>
+      secondaries.filter((asset) => {
+        if (!matchesTagFilter(asset, ipFilter)) return false
+        if (!secondaryFilter) return true
+        const tags = asset.category_tags || []
+        if (secondaryFilter === UNTAGGED) {
+          return !tags.some((tag) => contentTagNames.has(tag))
+        }
+        return tags.includes(secondaryFilter)
+      }),
+    [secondaries, ipFilter, secondaryFilter, contentTagNames],
+  )
+
+  const untaggedCount = useMemo(
+    () =>
+      secondaries.filter((asset) => {
+        if (!matchesTagFilter(asset, ipFilter)) return false
+        return !(asset.category_tags || []).some((tag) => contentTagNames.has(tag))
+      }).length,
+    [secondaries, ipFilter, contentTagNames],
+  )
+
   async function loadAll() {
     setLoading(true)
     try {
-      const [settings, noteItems, primaryItems, secondaryItems, packageItems] = await Promise.all([
+      const [settings, noteItems, tagItems, primaryItems, secondaryItems, packageItems] = await Promise.all([
         fetchSettings(),
         fetchNotes(),
+        fetchTags(),
         fetchAssets({ type: 'primary', availableOnly: true }),
         fetchAssets({ type: 'secondary' }),
         fetchPackages(),
@@ -71,6 +173,7 @@ function AssemblePage() {
       setIpNames(names)
       setIpName((current) => current || names[0] || '')
       setNotes(noteItems)
+      setTags(tagItems)
       setPrimaries(primaryItems)
       setSecondaries(secondaryItems)
       setPackages(packageItems)
@@ -84,6 +187,31 @@ function AssemblePage() {
   useEffect(() => {
     void loadAll()
   }, [])
+
+  useEffect(() => {
+    if (noteId === null) return
+    const stillVisible = confirmedNotes.some((item) => item.id === noteId)
+    if (!stillVisible) {
+      setNoteId(null)
+      setTitle('')
+    }
+  }, [confirmedNotes, noteId])
+
+  function selectNote(note: Note) {
+    setNoteId(note.id)
+    setTitle(noteDisplayTitle(note))
+  }
+
+  function addBenefit() {
+    const name = benefitDraft.trim()
+    if (!name) {
+      flash('请输入利益点名称', true)
+      return
+    }
+    setExtraBenefits((current) => (current.includes(name) ? current : [...current, name]))
+    setBenefitPoint(name)
+    setBenefitDraft('')
+  }
 
   function toggleSecondary(id: number) {
     setSecondaryIds((current) =>
@@ -169,6 +297,8 @@ function AssemblePage() {
     }
   }
 
+  const assembleReady = !loading && ipNames.length > 0
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -183,7 +313,7 @@ function AssemblePage() {
         <CardTitle>组装内容套件</CardTitle>
         <CardHint>
           选择已确认文案 + 1 张可用主图 + 多张次图 + 利益点。点「加入待导出套件」就会占用主图和改写（即使还没下载
-          Zip）；不想用了请在下方删除套件。
+          Zip）；次图可复用，也可在素材库直接删掉换新图。不想用整套请在下方删除套件。
         </CardHint>
         {loading ? (
           <div className="mt-4 h-40 animate-pulse rounded-xl bg-muted" aria-busy="true" />
@@ -202,7 +332,7 @@ function AssemblePage() {
           </div>
         ) : (
           <div className="mt-4 space-y-4">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2">
               <label className="text-sm">
                 <FieldLabel>IP</FieldLabel>
                 <Select value={ipName} onChange={(event) => setIpName(event.target.value)}>
@@ -215,16 +345,44 @@ function AssemblePage() {
               </label>
               <label className="text-sm">
                 <FieldLabel>标题</FieldLabel>
-                <Input value={title} onChange={(event) => setTitle(event.target.value)} />
-              </label>
-              <label className="text-sm">
-                <FieldLabel>利益点</FieldLabel>
                 <Input
-                  value={benefitPoint}
-                  onChange={(event) => setBenefitPoint(event.target.value)}
-                  placeholder="装企承诺"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="选定稿后自动填入，也可手改"
                 />
               </label>
+            </div>
+
+            <div>
+              <FieldLabel>利益点</FieldLabel>
+              <div className="flex flex-wrap gap-2">
+                {benefitOptions.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">还没有利益点，在右侧新增</span>
+                ) : (
+                  benefitOptions.map((name) => (
+                    <Chip key={name} active={benefitPoint === name} onClick={() => setBenefitPoint(name)}>
+                      {name}
+                    </Chip>
+                  ))
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Input
+                  value={benefitDraft}
+                  onChange={(event) => setBenefitDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      addBenefit()
+                    }
+                  }}
+                  placeholder="输入新利益点，回车添加"
+                  className="max-w-xs"
+                />
+                <Button variant="secondary" onClick={addBenefit}>
+                  新增
+                </Button>
+              </div>
             </div>
 
             <div>
@@ -242,84 +400,129 @@ function AssemblePage() {
                 />
               ) : (
                 <div className="grid gap-2">
-                  {confirmedNotes.map((note) => (
-                    <button
-                      key={note.id}
-                      type="button"
-                      onClick={() => setNoteId(note.id)}
-                      className={`cursor-pointer rounded-xl border px-3 py-2 text-left text-sm transition-colors duration-200 ${
-                        noteId === note.id
-                          ? 'border-cta/40 bg-cta/5'
-                          : 'border-border hover:border-slate-300'
-                      }`}
-                    >
-                      #{note.id} {note.final_content?.slice(0, 80)}
-                    </button>
-                  ))}
+                  {confirmedNotes.map((note) => {
+                    const extracted = noteDisplayTitle(note)
+                    return (
+                      <button
+                        key={note.id}
+                        type="button"
+                        onClick={() => selectNote(note)}
+                        className={`cursor-pointer rounded-xl border px-3 py-2 text-left text-sm transition-colors duration-200 ${
+                          noteId === note.id
+                            ? 'border-cta/40 bg-cta/5'
+                            : 'border-border hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="font-mono text-xs text-muted-foreground">#{note.id}</span>{' '}
+                        {extracted || '（未识别到标题）'}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
-
-            <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">可用主图（选 1 张）</p>
-              {primaries.length === 0 ? (
-                <EmptyState icon={Images} title="没有未使用的主图" description="上传主图或释放已被套件占用的主图后再选。" />
-              ) : (
-                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {primaries.map((asset) => (
-                    <li key={asset.id}>
-                      <button
-                        type="button"
-                        onClick={() => setPrimaryId(asset.id)}
-                        className={`w-full cursor-pointer overflow-hidden rounded-xl border transition-colors duration-200 ${
-                          primaryId === asset.id
-                            ? 'border-cta ring-2 ring-cta/30'
-                            : 'border-border hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="aspect-[3/4] w-full overflow-hidden bg-muted">
-                          <img src={asset.url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">次图（可多选）</p>
-              {secondaries.length === 0 ? (
-                <EmptyState icon={Images} title="还没有次图" description="到素材库上传次图后，可在这里多选复用。" />
-              ) : (
-                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {secondaries.map((asset) => (
-                    <li key={asset.id}>
-                      <button
-                        type="button"
-                        onClick={() => toggleSecondary(asset.id)}
-                        className={`w-full cursor-pointer overflow-hidden rounded-xl border transition-colors duration-200 ${
-                          secondaryIds.includes(asset.id)
-                            ? 'border-cta ring-2 ring-cta/30'
-                            : 'border-border hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="aspect-[3/4] w-full overflow-hidden bg-muted">
-                          <img src={asset.url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <Button disabled={saving} onClick={() => void onCreate()}>
-              {saving ? '保存中…' : '加入待导出套件'}
-            </Button>
           </div>
         )}
       </Card>
+
+      {assembleReady ? (
+        <>
+          <Card>
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle>可用主图</CardTitle>
+                <span className="font-mono text-xs text-muted-foreground">
+                  选 1 张 · {ipFilter ? `${visiblePrimaries.length} / ${primaries.length}` : primaries.length} 张可用
+                </span>
+              </div>
+              {ipTags.length > 0 ? (
+                <DropdownSelect
+                  label="IP 标签"
+                  className="w-full sm:w-64"
+                  value={ipFilter}
+                  onChange={setIpFilter}
+                  options={[
+                    { value: '', label: '全部 IP' },
+                    ...ipTags.map((tag) => ({ value: tag.name, label: tag.name })),
+                  ]}
+                />
+              ) : null}
+            </div>
+            {primaries.length === 0 ? (
+              <EmptyState icon={Images} title="没有未使用的主图" description="上传主图或释放已被套件占用的主图后再选。" />
+            ) : visiblePrimaries.length === 0 ? (
+              <EmptyState
+                icon={Images}
+                title="这个 IP 下没有主图"
+                description="换一个 IP 标签，或到素材库给主图打上 IP 标签。"
+              />
+            ) : (
+              <div className="max-h-[36rem] overflow-auto">
+                <ul className={ASSET_GRID}>
+                  {visiblePrimaries.map((asset) => (
+                    <AssetTile
+                      key={asset.id}
+                      asset={asset}
+                      selected={primaryId === asset.id}
+                      onClick={() => setPrimaryId(asset.id)}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle>次图</CardTitle>
+                <span className="font-mono text-xs text-muted-foreground">
+                  可多选 · 已选 {secondaryIds.length} 张
+                </span>
+              </div>
+              {secondaries.length > 0 ? (
+                <DropdownSelect
+                  label="内容标签"
+                  className="w-full sm:w-64"
+                  value={secondaryFilter}
+                  onChange={setSecondaryFilter}
+                  options={[
+                    { value: '', label: '全部内容' },
+                    ...contentTags.map((tag) => ({ value: tag.name, label: tag.name })),
+                    ...(untaggedCount > 0 ? [{ value: UNTAGGED, label: '未打内容标签' }] : []),
+                  ]}
+                />
+              ) : null}
+            </div>
+            {secondaries.length === 0 ? (
+              <EmptyState icon={Images} title="还没有次图" description="到素材库上传次图后，可在这里多选复用。次图不会被套件锁住。" />
+            ) : visibleSecondaries.length === 0 ? (
+              <EmptyState
+                icon={Images}
+                title="这个标签下没有次图"
+                description="换一个标签，或到素材库给次图打标。"
+              />
+            ) : (
+              <div className="max-h-[36rem] overflow-auto">
+                <ul className={ASSET_GRID}>
+                  {visibleSecondaries.map((asset) => (
+                    <AssetTile
+                      key={asset.id}
+                      asset={asset}
+                      selected={secondaryIds.includes(asset.id)}
+                      onClick={() => toggleSecondary(asset.id)}
+                    />
+                  ))}
+                </ul>
+              </div>
+            )}
+          </Card>
+
+          <Button disabled={saving} onClick={() => void onCreate()}>
+            {saving ? '保存中…' : '加入待导出套件'}
+          </Button>
+        </>
+      ) : null}
 
       <Card>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

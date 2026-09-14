@@ -5,19 +5,24 @@ from sqlalchemy.orm import Session
 
 from app.models import Asset, TagCatalog
 
+TAG_KINDS = {"ip", "content"}
+
 
 def list_tags(db: Session) -> list[TagCatalog]:
-    return list(db.scalars(select(TagCatalog).order_by(TagCatalog.id.asc())))
+    return list(db.scalars(select(TagCatalog).order_by(TagCatalog.kind.asc(), TagCatalog.id.asc())))
 
 
-def create_tag(db: Session, name: str) -> TagCatalog:
+def create_tag(db: Session, name: str, kind: str = "content") -> TagCatalog:
     cleaned = name.strip()
     if not cleaned:
         raise HTTPException(status_code=400, detail="标签名不能为空")
+    cleaned_kind = (kind or "content").strip()
+    if cleaned_kind not in TAG_KINDS:
+        raise HTTPException(status_code=400, detail="标签类型必须是 IP 或素材内容")
     existing = db.scalar(select(TagCatalog).where(TagCatalog.name == cleaned))
     if existing:
         raise HTTPException(status_code=409, detail="标签已存在")
-    tag = TagCatalog(name=cleaned)
+    tag = TagCatalog(name=cleaned, kind=cleaned_kind)
     db.add(tag)
     db.commit()
     db.refresh(tag)

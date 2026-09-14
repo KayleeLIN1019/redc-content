@@ -18,6 +18,7 @@ class AssetOut(BaseModel):
     storage_path: str
     category_tags: list[str]
     is_used: bool
+    billable: bool
     selectable: bool
     type_locked: bool
     url: str
@@ -33,11 +34,13 @@ class AssetListOut(BaseModel):
 class AssetTagsUpdate(BaseModel):
     category_tags: list[str] | None = None
     type: AssetType | None = None
+    billable: bool | None = None
 
 
 class AssetBatchIn(BaseModel):
     asset_ids: list[int] = Field(min_length=1)
     type: AssetType | None = None
+    billable: bool | None = None
     add_tags: list[str] = Field(default_factory=list)
     remove_tags: list[str] = Field(default_factory=list)
 
@@ -45,6 +48,7 @@ class AssetBatchIn(BaseModel):
 class TagOut(BaseModel):
     id: int
     name: str
+    kind: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -52,6 +56,7 @@ class TagOut(BaseModel):
 
 class TagCreate(BaseModel):
     name: str
+    kind: str = "content"
 
 
 class TagListOut(BaseModel):
@@ -197,17 +202,29 @@ class TagStat(BaseModel):
     count: int
 
 
+class IpRevenueStat(BaseModel):
+    ip_name: str
+    primary_count: int
+    secondary_count: int
+    primary_revenue: float
+    secondary_revenue: float
+
+
 class DashboardOut(BaseModel):
     total_packages: int
     published_count: int
     unpublished_count: int
     inventory_primary: int
     inventory_secondary: int
+    billable_primary: int
+    billable_secondary: int
+    excluded_count: int
     primary_used: int
     secondary_used: int
     primary_price: float
     secondary_price: float
     estimated_revenue: float
+    revenue_by_ip: list[IpRevenueStat]
     benefit_distribution: list[BenefitStat]
     published_by_benefit: list[BenefitStat]
     assets_by_tag: list[TagStat]

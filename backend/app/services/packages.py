@@ -142,7 +142,7 @@ def export_packages(db: Session, package_ids: list[int]) -> Path:
         dest = staging / sub_name
         dest.mkdir(parents=True)
         copy_text = (note.final_content or note.ai_draft or "").strip()
-        (dest / "文案.md").write_text(copy_text, encoding="utf-8")
+        (dest / "文案.txt").write_text(copy_text, encoding="utf-8")
         primary_ext = Path(primary.file_path).suffix or ".png"
         _copy_asset(primary, dest / f"主图{primary_ext}")
         for i, secondary_id in enumerate(package.secondary_asset_ids or [], start=1):
@@ -152,7 +152,8 @@ def export_packages(db: Session, package_ids: list[int]) -> Path:
             ext = Path(secondary.file_path).suffix or ".png"
             _copy_asset(secondary, dest / f"次图{i}{ext}")
 
-        package.status = "exported"
+        if package.status != "published":
+            package.status = "exported"
         package.export_folder_name = folder_name
 
     zip_path = settings.exports_dir / f"{folder_name}.zip"

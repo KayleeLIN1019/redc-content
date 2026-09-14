@@ -13,6 +13,7 @@ import {
   rewriteNotesBatch,
   type Note,
 } from './api'
+import { formatPublishCopy, looksLikePublishDraft } from './noteCopy'
 import {
   Alert,
   Badge,
@@ -59,9 +60,17 @@ function splitRewriteJobs(
 }
 
 function snippet(text: string | null, max = 80): string {
-  const value = (text || '').replace(/\s+/g, ' ').trim()
+  const value = formatPublishCopy(text || '').replace(/\s+/g, ' ').trim()
   if (!value) return '（无正文）'
   return value.length > max ? `${value.slice(0, max)}…` : value
+}
+
+function sourceCopy(note: Note): string {
+  return formatPublishCopy(note.ai_draft || note.raw_content || '')
+}
+
+function editableCopy(note: Note): string {
+  return formatPublishCopy(note.final_content || note.ai_draft || note.raw_content || '')
 }
 
 function formatTime(value: string): string {
@@ -116,7 +125,7 @@ function RewritePage() {
 
   function openNote(note: Note) {
     setCurrent(note)
-    setDraftEdit(note.final_content || note.ai_draft || '')
+    setDraftEdit(editableCopy(note))
     setIpName(note.ip_name)
     setRawLink(note.raw_link || '')
     setRawContent(note.raw_content || '')
@@ -201,9 +210,9 @@ function RewritePage() {
           raw_content: jobs[0].raw_content,
         })
         setCurrent(note)
-        setDraftEdit(note.ai_draft || '')
+        setDraftEdit(formatPublishCopy(note.ai_draft || ''))
         setNotes((items) => [note, ...items.filter((item) => item.id !== note.id)])
-        flash('改写完成，可在下方微调后保存定稿')
+        flash('改写完成，可在右侧微调后保存定稿')
         return
       }
       const result = await rewriteNotesBatch({ ip_name: ipName, items: jobs })
@@ -214,7 +223,7 @@ function RewritePage() {
       })
       if (created[0]) {
         setCurrent(created[0])
-        setDraftEdit(created[0].ai_draft || '')
+        setDraftEdit(formatPublishCopy(created[0].ai_draft || ''))
       }
       const failed = result.errors.length
       flash(
@@ -240,9 +249,9 @@ function RewritePage() {
         raw_content: source.content || undefined,
       })
       setCurrent(note)
-      setDraftEdit(note.final_content || note.ai_draft || note.raw_content || '')
+      setDraftEdit(editableCopy(note))
       setNotes((items) => [note, ...items.filter((item) => item.id !== note.id)])
-      flash('已保存原文。可把 ChatGPT 结果贴进下方编辑框后确认定稿')
+      flash('已保存原文。可把 ChatGPT 结果贴进右侧编辑框后确认定稿')
     } catch (err) {
       flash(err instanceof Error ? err.message : '保存失败', true)
     } finally {
@@ -255,7 +264,7 @@ function RewritePage() {
       flash('请先改写或保存原文', true)
       return
     }
-    const finalContent = draftEdit.trim()
+    const finalContent = formatPublishCopy(draftEdit).trim()
     if (!finalContent) {
       flash('定稿不能为空', true)
       return
@@ -264,7 +273,7 @@ function RewritePage() {
     try {
       const updated = await confirmNote(current.id, finalContent)
       setCurrent(updated)
-      setDraftEdit(updated.final_content || finalContent)
+      setDraftEdit(formatPublishCopy(updated.final_content || finalContent))
       setNotes((items) => items.map((item) => (item.id === updated.id ? updated : item)))
       flash('已保存定稿')
     } catch (err) {
@@ -384,23 +393,37 @@ function RewritePage() {
               {current.final_content?.trim() ? '已确认' : current.ai_draft ? '仅初稿' : '待编辑'}
             </Badge>
           </div>
-          <p className="mt-1 break-all text-sm text-muted-foreground">
+          <p className="mt-1 min-w-0 wrap-anywhere text-sm text-muted-foreground">
             {current.ip_name}
             {current.raw_link ? ` · ${current.raw_link}` : ''}
           </p>
-          <label className="mt-4 block text-sm">
-            <FieldLabel>{current.ai_draft ? 'AI 初稿（只读）' : '原文（只读）'}</FieldLabel>
-            <Textarea
-              readOnly
-              value={current.ai_draft || current.raw_content || ''}
-              rows={6}
-              className="bg-muted/50"
-            />
-          </label>
-          <label className="mt-4 block text-sm">
-            <FieldLabel>人工修改 / 粘贴 ChatGPT 结果（将保存为定稿）</FieldLabel>
-            <Textarea value={draftEdit} onChange={(event) => setDraftEdit(event.target.value)} rows={8} />
-          </label>
+          <div className="mt-4 grid items-stretch gap-4 md:grid-cols-2">
+            <label className="flex min-w-0 flex-col text-sm">
+              <FieldLabel>{current.ai_draft ? 'AI 初稿（只读）' : '原文（只读）'}</FieldLabel>
+              <Textarea
+                readOnly
+                value={sourceCopy(current)}
+                rows={16}
+                className="min-h-80 flex-1 bg-muted/50"
+              />
+            </label>
+            <label className="flex min-w-0 flex-col text-sm">
+              <FieldLabel>人工修改 / 粘贴 ChatGPT 结果（将保存为定稿）</FieldLabel>
+              <Textarea
+                value={draftEdit}
+                onChange={(event) => setDraftEdit(event.target.value)}
+                onPaste={(event) => {
+                  const pasted = event.clipboardData.getData('text')
+                  if (!looksLikePublishDraft(pasted)) return
+                  event.preventDefault()
+                  setDraftEdit(formatPublishCopy(pasted))
+                }}
+                rows={16}
+                className="min-h-80 flex-1"
+                placeholder={'标题：\n正文：\n话题：'}
+              />
+            </label>
+          </div>
           <Button disabled={saving} onClick={() => void onConfirm()} className="mt-4">
             {saving ? '保存中…' : '确认保存定稿'}
           </Button>

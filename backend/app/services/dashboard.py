@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -6,10 +6,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Asset, ContentPackage
-from app.schemas import BenefitStat, DashboardOut, PackagePublishIn, TagStat
+from app.schemas import BenefitStat, DashboardOut, IpRevenueStat, PackagePublishIn, TagStat
 from app.services.packages import list_packages
 from app.services.settings import get_or_create_settings
 from app.services.tags import list_tags
+
+UNASSIGNED_IP = "未打 IP"
+
+
+def _asset_ip(asset: Asset, ip_names: list[str]) -> str:
+    tags = list(asset.category_tags or [])
+    for name in ip_names:
+        if name in tags:
+            return name
+    return UNASSIGNED_IP
 
 
 def get_dashboard(db: Session) -> DashboardOut:
@@ -24,10 +34,37 @@ def get_dashboard(db: Session) -> DashboardOut:
     assets = list(db.scalars(select(Asset)))
     inventory_primary = sum(1 for item in assets if item.type == "primary")
     inventory_secondary = sum(1 for item in assets if item.type == "secondary")
+    billable_assets = [item for item in assets if item.billable]
+    billable_primary = sum(1 for item in billable_assets if item.type == "primary")
+    billable_secondary = sum(1 for item in billable_assets if item.type == "secondary")
+    excluded_count = len(assets) - len(billable_assets)
+
+    catalog = list_tags(db)
+    ip_names = [tag.name for tag in catalog if (tag.kind or "content") == "ip"]
+    buckets: dict[str, dict[str, int]] = defaultdict(lambda: {"primary": 0, "secondary": 0})
+    for asset in billable_assets:
+        buckets[_asset_ip(asset, ip_names)][asset.type] += 1
+
+    ordered_ips = [*ip_names]
+    if UNASSIGNED_IP in buckets:
+        ordered_ips.append(UNASSIGNED_IP)
+    revenue_by_ip = [
+        IpRevenueStat(
+            ip_name=name,
+            primary_count=counts["primary"],
+            secondary_count=counts["secondary"],
+            primary_revenue=round(counts["primary"] * primary_price, 2),
+            secondary_revenue=round(counts["secondary"] * secondary_price, 2),
+        )
+        for name in ordered_ips
+        if (counts := buckets.get(name, {"primary": 0, "secondary": 0}))
+        and (counts["primary"] or counts["secondary"])
+    ]
+
     tag_counts: Counter[str] = Counter()
     for asset in assets:
         tag_counts.update(asset.category_tags or [])
-    for tag in list_tags(db):
+    for tag in catalog:
         tag_counts.setdefault(tag.name, 0)
 
     all_benefits = Counter(item.benefit_point for item in packages)
@@ -38,13 +75,17 @@ def get_dashboard(db: Session) -> DashboardOut:
         unpublished_count=len(packages) - len(published),
         inventory_primary=inventory_primary,
         inventory_secondary=inventory_secondary,
+        billable_primary=billable_primary,
+        billable_secondary=billable_secondary,
+        excluded_count=excluded_count,
         primary_used=primary_used,
         secondary_used=secondary_used,
         primary_price=primary_price,
         secondary_price=secondary_price,
         estimated_revenue=round(
-            primary_used * primary_price + secondary_used * secondary_price, 2
+            billable_primary * primary_price + billable_secondary * secondary_price, 2
         ),
+        revenue_by_ip=revenue_by_ip,
         benefit_distribution=[
             BenefitStat(benefit_point=name, count=count)
             for name, count in sorted(all_benefits.items(), key=lambda item: (-item[1], item[0]))

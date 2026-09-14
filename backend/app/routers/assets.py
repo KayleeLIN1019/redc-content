@@ -34,6 +34,7 @@ def _to_out(asset: Asset, bound_primary_ids: set[int] | None = None) -> AssetOut
         storage_path=f"uploads/{asset.file_path}",
         category_tags=list(asset.category_tags or []),
         is_used=asset.is_used,
+        billable=bool(asset.billable),
         selectable=not used_primary,
         type_locked=asset.id in locked,
         url=f"/api/assets/{asset.id}/file",
@@ -92,6 +93,7 @@ async def upload_asset(
         original_filename=original_filename,
         category_tags=tags,
         is_used=False,
+        billable=True,
     )
     db.add(asset)
     db.commit()

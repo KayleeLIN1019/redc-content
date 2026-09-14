@@ -34,6 +34,7 @@ class Asset(Base):
     original_filename: Mapped[str] = mapped_column(String, nullable=False, default="")
     category_tags: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     is_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -92,9 +93,13 @@ class ContentPackage(Base):
 
 class TagCatalog(Base):
     __tablename__ = "tag_catalog"
+    __table_args__ = (
+        CheckConstraint("kind IN ('ip', 'content')", name="ck_tag_catalog_kind"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="content")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )

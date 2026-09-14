@@ -15,7 +15,7 @@ def get_tags(db: Session = Depends(get_db)) -> TagListOut:
 
 @router.post("", response_model=TagOut, status_code=201)
 def post_tag(payload: TagCreate, db: Session = Depends(get_db)) -> TagOut:
-    return TagOut.model_validate(create_tag(db, payload.name))
+    return TagOut.model_validate(create_tag(db, payload.name, payload.kind))
 
 
 @router.delete("/{tag_id}", status_code=204)

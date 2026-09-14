@@ -66,10 +66,10 @@ def test_create_and_export_package(client: tuple[TestClient, sessionmaker]) -> N
 
     with zipfile.ZipFile(BytesIO(exported.content)) as archive:
         names = archive.namelist()
-        assert any(name.endswith("文案.md") for name in names)
+        assert any(name.endswith("文案.txt") for name in names)
         assert any("主图" in name for name in names)
         assert any("次图1" in name for name in names)
-        copy = archive.read(next(name for name in names if name.endswith("文案.md"))).decode("utf-8")
+        copy = archive.read(next(name for name in names if name.endswith("文案.txt"))).decode("utf-8")
         assert copy == "定稿文案"
 
     listed = test_client.get("/api/packages")
@@ -147,3 +147,56 @@ def test_cannot_delete_published_package(client: tuple[TestClient, sessionmaker]
     blocked = test_client.delete(f"/api/packages/{package_id}")
     assert blocked.status_code == 400
     assert "已发布" in blocked.json()["detail"]
+
+
+def test_export_skips_deleted_secondary_and_keeps_published_kit(
+    client: tuple[TestClient, sessionmaker],
+) -> None:
+    test_client, _ = client
+    note_id = _confirmed_note(test_client)
+    primary = _upload(test_client, "primary")
+    secondary = _upload(test_client, "secondary", ["户型图"])
+    created = test_client.post(
+        "/api/packages",
+        json={
+            "title": "发布后换次图",
+            "ip_name": "桃子",
+            "benefit_point": "装企承诺",
+            "primary_asset_id": primary.json()["id"],
+            "secondary_asset_ids": [secondary.json()["id"]],
+            "competitor_note_id": note_id,
+        },
+    )
+    assert created.status_code == 201
+    package_id = created.json()["id"]
+    published = test_client.patch(
+        f"/api/packages/{package_id}/publish",
+        json={"note_id": "n-keep"},
+    )
+    assert published.status_code == 200
+    assert test_client.delete(f"/api/assets/{secondary.json()['id']}").status_code == 204
+
+    kept = test_client.get("/api/packages").json()["items"][0]
+    assert kept["id"] == package_id
+    assert kept["status"] == "published"
+    assert kept["note_id"] == "n-keep"
+    assert kept["secondary_asset_ids"] == [secondary.json()["id"]]
+
+    stats = test_client.get("/api/dashboard").json()
+    assert stats["published_count"] == 1
+    assert stats["secondary_used"] == 1
+    assert stats["inventory_secondary"] == 0
+
+    exported = test_client.post("/api/packages/export", json={"package_ids": [package_id]})
+    assert exported.status_code == 200
+    from io import BytesIO
+
+    with zipfile.ZipFile(BytesIO(exported.content)) as archive:
+        names = archive.namelist()
+        assert any("主图" in name for name in names)
+        assert any(name.endswith("文案.txt") for name in names)
+        assert not any("次图" in name for name in names)
+
+    after_export = test_client.get("/api/packages").json()["items"][0]
+    assert after_export["status"] == "published"
+    assert after_export["note_id"] == "n-keep"

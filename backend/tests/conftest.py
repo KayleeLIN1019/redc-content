@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.config import settings
-from app.constants import DEFAULT_LLM_MODEL, SECONDARY_ASSET_TAGS
+from app.constants import DEFAULT_LLM_MODEL, IP_ASSET_TAGS, SECONDARY_ASSET_TAGS
 from app.database import Base, get_db
 from app.main import app
 from app.models import Asset, CompetitorNote, ContentPackage, SystemSetting, TagCatalog  # noqa: F401
@@ -45,7 +45,9 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[T
     TestingSession = sessionmaker(bind=engine)
     seed_db = TestingSession()
     for name in SECONDARY_ASSET_TAGS:
-        seed_db.add(TagCatalog(name=name))
+        seed_db.add(TagCatalog(name=name, kind="content"))
+    for name in IP_ASSET_TAGS:
+        seed_db.add(TagCatalog(name=name, kind="ip"))
     seed_db.add(
         SystemSetting(
             id=1,

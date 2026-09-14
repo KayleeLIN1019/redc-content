@@ -8,16 +8,24 @@ export type Asset = {
   storage_path: string
   category_tags: string[]
   is_used: boolean
+  billable: boolean
   selectable: boolean
   type_locked: boolean
   url: string
   created_at: string
 }
 
+export type TagKind = 'ip' | 'content'
+
 export type Tag = {
   id: number
   name: string
+  kind: TagKind
   created_at: string
+}
+
+export function tagsOfKind(tags: Tag[], kind: TagKind): Tag[] {
+  return tags.filter((tag) => (tag.kind || 'content') === kind)
 }
 
 export type Settings = {
@@ -105,11 +113,11 @@ export async function fetchTags(): Promise<Tag[]> {
   return data.items
 }
 
-export async function createTag(name: string): Promise<Tag> {
+export async function createTag(name: string, kind: TagKind = 'content'): Promise<Tag> {
   const response = await fetch('/api/tags', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, kind }),
   })
   if (!response.ok) throw new Error(await parseError(response))
   return (await response.json()) as Tag
@@ -157,11 +165,12 @@ export async function deleteAsset(id: number): Promise<void> {
 
 export async function updateAsset(
   id: number,
-  input: { tags?: string[]; type?: AssetType },
+  input: { tags?: string[]; type?: AssetType; billable?: boolean },
 ): Promise<Asset> {
-  const body: { category_tags?: string[]; type?: AssetType } = {}
+  const body: { category_tags?: string[]; type?: AssetType; billable?: boolean } = {}
   if (input.tags !== undefined) body.category_tags = input.tags
   if (input.type !== undefined) body.type = input.type
+  if (input.billable !== undefined) body.billable = input.billable
   const response = await fetch(`/api/assets/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -178,6 +187,7 @@ export async function updateAssetTags(id: number, tags: string[]): Promise<Asset
 export async function batchUpdateAssets(input: {
   assetIds: number[]
   type?: AssetType
+  billable?: boolean
   addTags?: string[]
   removeTags?: string[]
 }): Promise<Asset[]> {
@@ -187,6 +197,7 @@ export async function batchUpdateAssets(input: {
     body: JSON.stringify({
       asset_ids: input.assetIds,
       type: input.type,
+      billable: input.billable,
       add_tags: input.addTags || [],
       remove_tags: input.removeTags || [],
     }),
@@ -401,11 +412,21 @@ export type Dashboard = {
   unpublished_count: number
   inventory_primary: number
   inventory_secondary: number
+  billable_primary: number
+  billable_secondary: number
+  excluded_count: number
   primary_used: number
   secondary_used: number
   primary_price: number
   secondary_price: number
   estimated_revenue: number
+  revenue_by_ip: {
+    ip_name: string
+    primary_count: number
+    secondary_count: number
+    primary_revenue: number
+    secondary_revenue: number
+  }[]
   benefit_distribution: { benefit_point: string; count: number }[]
   published_by_benefit: { benefit_point: string; count: number }[]
   assets_by_tag: { tag: string; count: number }[]

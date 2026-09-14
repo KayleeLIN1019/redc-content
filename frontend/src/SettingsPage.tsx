@@ -279,7 +279,7 @@ function SettingsPage() {
 
       <Card>
         <CardTitle>素材单价</CardTitle>
-        <CardHint>用于看板收益核算，可随时调整。</CardHint>
+        <CardHint>按素材库里计入收益的主图、次图张数核算看板预计收入，可随时调整。</CardHint>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block text-sm">
             <FieldLabel>主图单价</FieldLabel>
