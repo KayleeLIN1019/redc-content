@@ -1,4 +1,4 @@
-import { BarChart3, Package } from 'lucide-react'
+import { BarChart3, Image as ImageIcon, Package } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import {
@@ -407,6 +407,42 @@ function BarList({
   )
 }
 
+function CoverThumb({ url, title }: { url?: string; title: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!url || failed) {
+    return (
+      <div
+        className="relative flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground"
+        aria-hidden="true"
+      >
+        <ImageIcon size={18} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative min-h-0 overflow-hidden rounded-lg bg-muted">
+      <img
+        src={url}
+        alt={`${title} 主图`}
+        className="absolute inset-0 h-full w-full max-w-full object-cover"
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  )
+}
+
+function openDatePicker(event: { currentTarget: HTMLInputElement }) {
+  const input = event.currentTarget
+  if (typeof input.showPicker !== 'function') return
+  try {
+    input.showPicker()
+  } catch {
+    /* already open or unsupported */
+  }
+}
+
 function DashboardPage() {
   const [stats, setStats] = useState<Dashboard | null>(null)
   const [packages, setPackages] = useState<ContentPackage[]>([])
@@ -420,6 +456,7 @@ function DashboardPage() {
   const [savingId, setSavingId] = useState<number | null>(null)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [ipFilter, setIpFilter] = useState('')
+  const [publishIpFilter, setPublishIpFilter] = useState('')
 
   async function load() {
     setLoading(true)
@@ -439,7 +476,7 @@ function DashboardPage() {
         Object.fromEntries(
           items.map((item) => [
             item.id,
-            item.publish_time ? item.publish_time.slice(0, 16) : '',
+            item.publish_time ? item.publish_time.slice(0, 10) : '',
           ]),
         ),
       )
@@ -481,6 +518,23 @@ function DashboardPage() {
     () => countByName(filteredPackages.map((item) => item.benefit_point)),
     [filteredPackages],
   )
+  const publishIpOptions = useMemo(() => {
+    const names = new Set(ipNames)
+    for (const item of packages) {
+      const name = item.ip_name.trim()
+      if (name) names.add(name)
+    }
+    return [...names]
+  }, [ipNames, packages])
+  const publishPackages = useMemo(
+    () =>
+      publishIpFilter ? packages.filter((item) => item.ip_name === publishIpFilter) : packages,
+    [packages, publishIpFilter],
+  )
+  const assetsById = useMemo(
+    () => new Map(assets.map((asset) => [asset.id, asset])),
+    [assets],
+  )
   const filteredTagStats = useMemo(() => {
     const skip = new Set(ipNames)
     if (!ipFilter) {
@@ -505,7 +559,7 @@ function DashboardPage() {
       const time = times[packageId]
       const updated = await publishPackage(packageId, {
         note_id: noteIds[packageId] || '',
-        publish_time: time ? new Date(time).toISOString() : undefined,
+        publish_time: time ? `${time}T00:00:00` : undefined,
       })
       setPackages((items) => items.map((item) => (item.id === updated.id ? updated : item)))
       const dashboard = await fetchDashboard()
@@ -668,11 +722,27 @@ function DashboardPage() {
       </section>
 
       <Card>
-        <div className="mb-4 flex items-center gap-2">
-          <BarChart3 size={16} className="text-accent" aria-hidden="true" />
-          <div>
-            <CardTitle>发布补全</CardTitle>
-            <CardHint>填写笔记 ID、发布时间后标记为已发布。</CardHint>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 size={16} className="text-accent" aria-hidden="true" />
+            <div>
+              <CardTitle>发布补全</CardTitle>
+              <CardHint>填写笔记 ID、发布时间后标记为已发布。</CardHint>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip active={publishIpFilter === ''} onClick={() => setPublishIpFilter('')}>
+              全部 IP
+            </Chip>
+            {publishIpOptions.map((name) => (
+              <Chip
+                key={name}
+                active={publishIpFilter === name}
+                onClick={() => setPublishIpFilter(publishIpFilter === name ? '' : name)}
+              >
+                {name}
+              </Chip>
+            ))}
           </div>
         </div>
         {packages.length === 0 ? (
@@ -681,49 +751,67 @@ function DashboardPage() {
             title="还没有内容套件"
             description="先到内容打包组成套件，再回到这里补发布信息。"
           />
+        ) : publishPackages.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title={`还没有${publishIpFilter}的套件`}
+            description="换一个 IP，或先去内容打包组成套件。"
+          />
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">
-            {packages.map((item) => (
-              <li key={item.id} className="rounded-xl border border-border bg-muted/50 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">
-                      {item.ip_name} · {item.benefit_point}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">{item.title}</p>
+            {publishPackages.map((item) => {
+              const primary = assetsById.get(item.primary_asset_id)
+              return (
+                <li key={item.id} className="rounded-xl border border-border bg-muted/50 p-4">
+                  <div className="grid grid-cols-[9rem_minmax(0,1fr)] items-stretch gap-3">
+                    <CoverThumb url={primary?.url} title={item.title} />
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
+                            {item.title}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {item.ip_name} · {item.benefit_point}
+                          </p>
+                        </div>
+                        <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
+                      </div>
+                      <label className="mt-3 block text-xs text-muted-foreground">
+                        笔记 ID
+                        <Input
+                          value={noteIds[item.id] || ''}
+                          onChange={(event) =>
+                            setNoteIds((current) => ({ ...current, [item.id]: event.target.value }))
+                          }
+                          className="mt-1"
+                        />
+                      </label>
+                      <label className="mt-2 block text-xs text-muted-foreground">
+                        发布日期
+                        <Input
+                          type="date"
+                          value={times[item.id] || ''}
+                          onChange={(event) =>
+                            setTimes((current) => ({ ...current, [item.id]: event.target.value }))
+                          }
+                          onClick={openDatePicker}
+                          onFocus={openDatePicker}
+                          className="mt-1 cursor-pointer"
+                        />
+                      </label>
+                      <Button
+                        disabled={savingId === item.id}
+                        onClick={() => void onPublish(item.id)}
+                        className="mt-3"
+                      >
+                        {item.status === 'published' ? '更新发布信息' : '标记为已发布'}
+                      </Button>
+                    </div>
                   </div>
-                  <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
-                </div>
-                <label className="mt-3 block text-xs text-muted-foreground">
-                  笔记 ID
-                  <Input
-                    value={noteIds[item.id] || ''}
-                    onChange={(event) =>
-                      setNoteIds((current) => ({ ...current, [item.id]: event.target.value }))
-                    }
-                    className="mt-1"
-                  />
-                </label>
-                <label className="mt-2 block text-xs text-muted-foreground">
-                  发布时间
-                  <Input
-                    type="datetime-local"
-                    value={times[item.id] || ''}
-                    onChange={(event) =>
-                      setTimes((current) => ({ ...current, [item.id]: event.target.value }))
-                    }
-                    className="mt-1"
-                  />
-                </label>
-                <Button
-                  disabled={savingId === item.id}
-                  onClick={() => void onPublish(item.id)}
-                  className="mt-3"
-                >
-                  {item.status === 'published' ? '更新发布信息' : '标记为已发布'}
-                </Button>
-              </li>
-            ))}
+                </li>
+              )
+            })}
           </ul>
         )}
       </Card>
