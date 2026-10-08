@@ -3,11 +3,13 @@ import { useEffect, useMemo, useState, type DragEvent } from 'react'
 
 import {
   batchUpdateAssets,
+  createImageSet,
   createTag,
   deleteAsset,
   deleteTag,
   fetchAssets,
   fetchTags,
+  publishDirect,
   updateAsset,
   updateAssetTags,
   uploadAsset,
@@ -29,6 +31,7 @@ import {
   EmptyState,
   Input,
   PageHeader,
+  Select,
 } from './ui'
 
 type TypeFilter = 'all' | AssetType
@@ -66,6 +69,15 @@ function AssetsPage() {
   const [pendingTags, setPendingTags] = useState<string[]>([])
   const [pendingBillable, setPendingBillable] = useState<boolean | null>(null)
   const [batchSaving, setBatchSaving] = useState(false)
+  const [publishOpen, setPublishOpen] = useState(false)
+  const [publishTitle, setPublishTitle] = useState('')
+  const [publishIp, setPublishIp] = useState('')
+  const [publishBenefit, setPublishBenefit] = useState('')
+  const [publishDate, setPublishDate] = useState('')
+  const [publishNoteId, setPublishNoteId] = useState('')
+  const [publishSaving, setPublishSaving] = useState(false)
+  const [setName, setSetName] = useState('')
+  const [setSaving, setSetSaving] = useState(false)
 
   useEffect(() => {
     if (files.length === 0) {
@@ -317,6 +329,101 @@ function AssetsPage() {
     () => assets.filter((item) => selectedIds.includes(item.id)),
     [assets, selectedIds],
   )
+
+  const publishablePrimaries = useMemo(
+    () => selectedAssets.filter((item) => item.type === 'primary' && !item.is_used),
+    [selectedAssets],
+  )
+
+  const selectedSecondaries = useMemo(
+    () => selectedAssets.filter((item) => item.type === 'secondary'),
+    [selectedAssets],
+  )
+
+  async function onSaveImageSet() {
+    const name = setName.trim()
+    if (!name) {
+      flash('请输入套图名称', true)
+      return
+    }
+    if (selectedSecondaries.length === 0) {
+      flash('套图只能由次图组成，请先勾选次图', true)
+      return
+    }
+    setSetSaving(true)
+    try {
+      const created = await createImageSet({
+        name,
+        asset_ids: selectedSecondaries.map((item) => item.id),
+      })
+      const skipped = selectedAssets.length - selectedSecondaries.length
+      flash(
+        `已存套图「${created.name}」（${created.asset_ids.length} 张）${
+          skipped > 0 ? `，已自动跳过 ${skipped} 张主图` : ''
+        }，到内容打包页可一键选用`,
+      )
+      setSetName('')
+    } catch (err) {
+      flash(err instanceof Error ? err.message : '保存套图失败', true)
+    } finally {
+      setSetSaving(false)
+    }
+  }
+
+  function openPublishModal() {
+    if (publishablePrimaries.length === 0) {
+      flash('请先勾选未使用的主图（次图和已占用的主图不能登记发布）', true)
+      return
+    }
+    const ipNames = ipTags.map((tag) => tag.name)
+    const sharedIp = ipNames.find((name) =>
+      publishablePrimaries.every((item) => item.category_tags.includes(name)),
+    )
+    const contentNames = contentTags.map((tag) => tag.name)
+    const sharedContent = contentNames.find((name) =>
+      publishablePrimaries.every((item) => item.category_tags.includes(name)),
+    )
+    setPublishTitle('')
+    setPublishIp(sharedIp || '')
+    setPublishBenefit(sharedContent || '')
+    setPublishDate(new Date().toISOString().slice(0, 10))
+    setPublishNoteId('')
+    setPublishOpen(true)
+  }
+
+  async function onConfirmPublish() {
+    if (!publishTitle.trim()) {
+      flash('请填写这篇小红书内容的标题', true)
+      return
+    }
+    if (!publishIp) {
+      flash('请选择 IP', true)
+      return
+    }
+    if (!publishBenefit) {
+      flash('请选择利益点', true)
+      return
+    }
+    setPublishSaving(true)
+    try {
+      const created = await publishDirect({
+        title: publishTitle.trim(),
+        ip_name: publishIp,
+        benefit_point: publishBenefit,
+        primary_asset_ids: publishablePrimaries.map((item) => item.id),
+        note_id: publishNoteId.trim(),
+        publish_time: publishDate ? `${publishDate}T00:00:00` : undefined,
+      })
+      flash(`已登记 ${created.length} 篇发布，看板「发布补全」可查看`)
+      setPublishOpen(false)
+      clearSelection()
+      await loadAssets()
+    } catch (err) {
+      flash(err instanceof Error ? err.message : '登记发布失败', true)
+    } finally {
+      setPublishSaving(false)
+    }
+  }
 
   function tagPresence(name: string): 'all' | 'some' | 'none' {
     if (selectedAssets.length === 0) return 'none'
@@ -716,7 +823,7 @@ function AssetsPage() {
           <span>勾选或点图片后，底部栏点主次图 / 标签会立刻改到卡片上。</span>
         </div>
         {loading && assets.length === 0 ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
             {Array.from({ length: 8 }).map((_, index) => (
               <div key={index} className="glass aspect-[3/4] animate-pulse rounded-xl" />
             ))}
@@ -742,7 +849,7 @@ function AssetsPage() {
             }
           />
         ) : (
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
             {visibleAssets.map((asset) => {
               const disabled = !asset.selectable
               const selected = selectedIds.includes(asset.id)
@@ -796,34 +903,35 @@ function AssetsPage() {
                       删除
                     </button>
                   </div>
-                  <div className="space-y-2 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex gap-1">
-                        {(['primary', 'secondary'] as const).map((value) => (
-                          <button
-                            key={value}
-                            type="button"
-                            disabled={value === 'secondary' && asset.type_locked}
-                            onClick={() => void onChangeType(asset, value)}
-                            className={`cursor-pointer rounded-full px-2 py-0.5 text-[11px] disabled:cursor-not-allowed disabled:opacity-50 ${
-                              asset.type === value
-                                ? 'bg-cta text-cta-foreground'
-                                : 'bg-muted text-muted-foreground'
-                            }`}
-                            title={
-                              value === 'secondary' && asset.type_locked
-                                ? '套件主图不能改成次图'
-                                : undefined
-                            }
-                          >
-                            {typeLabel(value)}
-                          </button>
-                        ))}
-                      </div>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {asset.original_filename || `#${asset.id}`}
-                      </span>
+                  <div className="space-y-1.5 p-2">
+                    <div className="flex items-center gap-1">
+                      {(['primary', 'secondary'] as const).map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          disabled={value === 'secondary' && asset.type_locked}
+                          onClick={() => void onChangeType(asset, value)}
+                          className={`shrink-0 cursor-pointer whitespace-nowrap rounded-full px-1.5 py-px text-[10px] leading-4 disabled:cursor-not-allowed disabled:opacity-50 ${
+                            asset.type === value
+                              ? 'bg-cta text-cta-foreground'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                          title={
+                            value === 'secondary' && asset.type_locked
+                              ? '套件主图不能改成次图'
+                              : undefined
+                          }
+                        >
+                          {typeLabel(value)}
+                        </button>
+                      ))}
                     </div>
+                    <p
+                      className="truncate text-[11px] leading-4 text-muted-foreground"
+                      title={asset.original_filename || `#${asset.id}`}
+                    >
+                      {asset.original_filename || `#${asset.id}`}
+                    </p>
                     <button
                       type="button"
                       onClick={() => void copyPath(asset.storage_path)}
@@ -837,9 +945,9 @@ function AssetsPage() {
                         {asset.category_tags.map((name) => (
                           <span
                             key={name}
-                            className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground/80"
+                            className="inline-flex max-w-full items-center gap-0.5 rounded-full bg-muted px-1.5 py-px text-[10px] leading-4 text-foreground/80"
                           >
-                            {name}
+                            <span className="truncate">{name}</span>
                             <button
                               type="button"
                               className="cursor-pointer hover:text-red-600"
@@ -850,7 +958,7 @@ function AssetsPage() {
                           </span>
                         ))}
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex items-center gap-1">
                         <Combobox
                           value={cardTagDraft[asset.id] || ''}
                           options={tags
@@ -869,7 +977,7 @@ function AssetsPage() {
                         <button
                           type="button"
                           onClick={() => void addAssetTag(asset, cardTagDraft[asset.id] || '')}
-                          className="btn btn-primary rounded-xl px-2 text-xs"
+                          className="shrink-0 cursor-pointer whitespace-nowrap rounded-md bg-cta px-1.5 py-0.5 text-[11px] font-medium leading-4 text-cta-foreground hover:bg-slate-900"
                         >
                           加
                         </button>
@@ -891,6 +999,44 @@ function AssetsPage() {
               勾选标签或不计入收益后，点右上角应用。标签区可向下滚动。
             </span>
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Input
+                  value={setName}
+                  onChange={(event) => setSetName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      void onSaveImageSet()
+                    }
+                  }}
+                  placeholder="套图名称"
+                  className="w-28 px-2 py-1 text-xs"
+                />
+                <Button
+                  variant="secondary"
+                  disabled={setSaving || selectedSecondaries.length === 0}
+                  onClick={() => void onSaveImageSet()}
+                  title={
+                    selectedSecondaries.length === 0
+                      ? '勾选次图后可存为套图'
+                      : `把 ${selectedSecondaries.length} 张次图存为一套图`
+                  }
+                >
+                  {setSaving ? '保存中…' : '存为套图'}
+                </Button>
+              </div>
+              <Button
+                variant="secondary"
+                disabled={batchSaving || publishSaving || publishablePrimaries.length === 0}
+                onClick={openPublishModal}
+                title={
+                  publishablePrimaries.length === 0
+                    ? '勾选未使用的主图后，可跳过打包流程直接登记发布'
+                    : `把 ${publishablePrimaries.length} 张主图登记为已发布`
+                }
+              >
+                标记已发布{publishablePrimaries.length > 0 ? `（${publishablePrimaries.length}）` : ''}
+              </Button>
               <Button variant="secondary" disabled={batchSaving} onClick={clearSelection}>
                 取消选中
               </Button>
@@ -1012,6 +1158,98 @@ function AssetsPage() {
               className="max-w-44 px-2 py-1 text-xs"
             />
           </div>
+          </div>
+        </div>
+      )}
+
+      {publishOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => !publishSaving && setPublishOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="标记已发布"
+            className="glass-strong w-full max-w-md rounded-xl border border-border p-5 shadow-lg"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold">标记已发布</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              把勾选的 {publishablePrimaries.length} 张主图登记为已发布，会出现在看板「发布补全」里。
+              适合没走改写流程的旧内容。
+            </p>
+            <div className="mt-4 space-y-3">
+              <label className="block space-y-1">
+                <span className="text-xs text-muted-foreground">笔记标题</span>
+                <Input
+                  value={publishTitle}
+                  onChange={(event) => setPublishTitle(event.target.value)}
+                  placeholder="这篇小红书内容的标题"
+                  autoFocus
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className="text-xs text-muted-foreground">IP</span>
+                  <Select
+                    value={publishIp}
+                    onChange={(event) => setPublishIp(event.target.value)}
+                  >
+                    <option value="">选择 IP</option>
+                    {ipTags.map((tag) => (
+                      <option key={tag.id} value={tag.name}>
+                        {tag.name}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs text-muted-foreground">利益点</span>
+                  <Select
+                    value={publishBenefit}
+                    onChange={(event) => setPublishBenefit(event.target.value)}
+                  >
+                    <option value="">选择利益点</option>
+                    {contentTags.map((tag) => (
+                      <option key={tag.id} value={tag.name}>
+                        {tag.name}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className="text-xs text-muted-foreground">发布时间</span>
+                  <Input
+                    type="date"
+                    value={publishDate}
+                    onChange={(event) => setPublishDate(event.target.value)}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs text-muted-foreground">笔记 ID（选填）</span>
+                  <Input
+                    value={publishNoteId}
+                    onChange={(event) => setPublishNoteId(event.target.value)}
+                    placeholder="小红书笔记 ID"
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={publishSaving}
+                onClick={() => setPublishOpen(false)}
+              >
+                取消
+              </Button>
+              <Button disabled={publishSaving} onClick={() => void onConfirmPublish()}>
+                {publishSaving ? '登记中…' : '确认发布'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

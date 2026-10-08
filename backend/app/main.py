@@ -6,6 +6,7 @@ from app.config import settings
 from app.database import get_db
 from app.routers.assets import router as assets_router
 from app.routers.dashboard import router as dashboard_router
+from app.routers.image_sets import router as image_sets_router
 from app.routers.notes import router as notes_router
 from app.routers.packages import router as packages_router
 from app.routers.settings import router as settings_router
@@ -25,6 +26,7 @@ app.add_middleware(
 
 app.include_router(assets_router)
 app.include_router(dashboard_router)
+app.include_router(image_sets_router)
 app.include_router(notes_router)
 app.include_router(packages_router)
 app.include_router(settings_router)

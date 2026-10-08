@@ -31,6 +31,7 @@ function normalizeHeaderLine(line: string): string {
     .replace(/^\*{1,2}/, '')
     .replace(/\*{1,2}$/, '')
     .replace(/^\d+[.、)）]\s*/, '')
+    .replace(/[（(][^)）]*[)）]/g, '')
     .trim()
 }
 
@@ -57,13 +58,14 @@ function classifyHeader(line: string): { kind: SectionKind; rest: string } | nul
 }
 
 function isTitleLabel(line: string): boolean {
-  return /^(首选[｜|]?)?(利益点\/?结果型|痛点\/?避坑型|桃子经验型|结果型|避坑型|经验型)$/.test(line)
+  return /^(首选[｜|]?)?(利益点|痛点|结果|避坑|经验|桃子经验)(\/(结果|避坑))?型$/.test(line)
 }
 
 function cleanLine(line: string): string {
   return line
     .replace(/^[0-9]+[.、)）]\s*/, '')
     .replace(/^[-*•]\s*/, '')
+    .replace(/^⭐\s*/, '')
     .replace(/^[ \t]*---+[ \t]*$/, '')
     .trim()
 }
@@ -78,9 +80,9 @@ function pickTitle(block: string): string {
     const line = lines[index]
     if (!/首选/.test(line)) continue
     const after = line
-      .replace(/[（(]首选[)）]/g, '')
-      .replace(/^首选[：:]\s*/, '')
-      .replace(/^首选[｜|].*$/, '')
+      .replace(/^[（(【\[]?首选[)）】\]]?/, '')
+      .replace(/^[（(【\[][^)）】\]]*[)）】\]]/, '')
+      .replace(/^[：:｜|]\s*/, '')
       .trim()
     if (after && !isTitleLabel(after)) return after
     const next = lines.slice(index + 1).find((item) => !isTitleLabel(item))

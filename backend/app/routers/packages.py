@@ -7,11 +7,23 @@ from app.models import ContentPackage
 from app.schemas import (
     PackageCreateIn,
     PackageExportIn,
+    PackageImagesUpdateIn,
     PackageListOut,
     PackageOut,
+    PackagePublishDirectIn,
     PackagePublishIn,
+    SecondaryRecommendIn,
+    SecondaryRecommendOut,
 )
-from app.services.packages import create_package, delete_package, export_packages, list_packages
+from app.services.packages import (
+    create_package,
+    delete_package,
+    export_packages,
+    list_packages,
+    publish_direct,
+    update_draft_images,
+)
+from app.services.secondary_recommend import recommend_secondaries
 
 
 def to_package_out(package: ContentPackage) -> PackageOut:
@@ -43,6 +55,23 @@ def post_package(payload: PackageCreateIn, db: Session = Depends(get_db)) -> Pac
     return to_package_out(create_package(db, payload))
 
 
+@router.post("/publish-direct", response_model=PackageListOut, status_code=201)
+def post_publish_direct(
+    payload: PackagePublishDirectIn,
+    db: Session = Depends(get_db),
+) -> PackageListOut:
+    return PackageListOut(items=[to_package_out(item) for item in publish_direct(db, payload)])
+
+
+@router.patch("/{package_id}/images", response_model=PackageOut)
+def patch_package_images(
+    package_id: int,
+    payload: PackageImagesUpdateIn,
+    db: Session = Depends(get_db),
+) -> PackageOut:
+    return to_package_out(update_draft_images(db, package_id, payload))
+
+
 @router.delete("/{package_id}", status_code=204)
 def remove_package(package_id: int, db: Session = Depends(get_db)) -> None:
     delete_package(db, package_id)
@@ -57,6 +86,19 @@ def patch_publish(
     from app.services.dashboard import publish_package
 
     return to_package_out(publish_package(db, package_id, payload))
+
+
+@router.post("/recommend-secondaries", response_model=SecondaryRecommendOut)
+def post_recommend_secondaries(
+    payload: SecondaryRecommendIn,
+    db: Session = Depends(get_db),
+) -> SecondaryRecommendOut:
+    result = recommend_secondaries(db, payload.ip_name, payload.benefit_point)
+    return SecondaryRecommendOut(
+        asset_ids=result.asset_ids,
+        summary=result.summary,
+        matched_benefit=result.matched_benefit,
+    )
 
 
 @router.post("/export")

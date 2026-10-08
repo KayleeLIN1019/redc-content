@@ -63,6 +63,24 @@ class TagListOut(BaseModel):
     items: list[TagOut]
 
 
+class ImageSetCreateIn(BaseModel):
+    name: str
+    asset_ids: list[int] = Field(min_length=1)
+
+
+class ImageSetOut(BaseModel):
+    id: int
+    name: str
+    asset_ids: list[int]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ImageSetListOut(BaseModel):
+    items: list[ImageSetOut]
+
+
 class SettingsOut(BaseModel):
     api_key_masked: str
     has_api_key: bool
@@ -162,6 +180,11 @@ class PackageCreateIn(BaseModel):
     competitor_note_id: int
 
 
+class PackageImagesUpdateIn(BaseModel):
+    primary_asset_id: int
+    secondary_asset_ids: list[int] = Field(default_factory=list)
+
+
 class PackageOut(BaseModel):
     id: int
     title: str
@@ -190,6 +213,26 @@ class PackageExportIn(BaseModel):
 class PackagePublishIn(BaseModel):
     note_id: str = ""
     publish_time: datetime | None = None
+
+
+class PackagePublishDirectIn(BaseModel):
+    title: str
+    ip_name: str
+    benefit_point: str
+    primary_asset_ids: list[int] = Field(min_length=1)
+    note_id: str = ""
+    publish_time: datetime | None = None
+
+
+class SecondaryRecommendIn(BaseModel):
+    ip_name: str
+    benefit_point: str = ""
+
+
+class SecondaryRecommendOut(BaseModel):
+    asset_ids: list[int]
+    summary: str
+    matched_benefit: bool
 
 
 class BenefitStat(BaseModel):

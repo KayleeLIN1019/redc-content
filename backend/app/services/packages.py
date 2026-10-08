@@ -8,10 +8,11 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import settings
 from app.models import Asset, CompetitorNote, ContentPackage
-from app.schemas import PackageCreateIn
+from app.schemas import PackageCreateIn, PackageImagesUpdateIn, PackagePublishDirectIn
 from app.services.assets import mark_primary_asset_used, resolve_asset_file
 
 
@@ -58,6 +59,95 @@ def create_package(db: Session, payload: PackageCreateIn) -> ContentPackage:
     )
     db.add(package)
     mark_primary_asset_used(db, primary.id)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="该主图已被绑定到其他套件") from exc
+    db.refresh(package)
+    return package
+
+
+def publish_direct(db: Session, payload: PackagePublishDirectIn) -> list[ContentPackage]:
+    """旧内容一键补登记：主图直接生成已发布套件，不进改写/打包流程。"""
+    title = payload.title.strip()
+    ip_name = payload.ip_name.strip()
+    benefit_point = payload.benefit_point.strip()
+    if not title or not ip_name or not benefit_point:
+        raise HTTPException(status_code=400, detail="标题、IP 和利益点不能为空")
+
+    note_id = payload.note_id.strip() or None
+    publish_time = payload.publish_time or datetime.now()
+    created: list[ContentPackage] = []
+    for asset_id in payload.primary_asset_ids:
+        primary = db.get(Asset, asset_id)
+        if primary is None or primary.type != "primary":
+            raise HTTPException(status_code=400, detail=f"主图不存在或类型错误: {asset_id}")
+        if primary.is_used:
+            raise HTTPException(status_code=400, detail=f"主图 #{asset_id} 已被使用")
+
+        note = CompetitorNote(
+            raw_link=note_id,
+            final_content=title,
+            ip_name=ip_name,
+        )
+        db.add(note)
+        db.flush()
+
+        package = ContentPackage(
+            title=title,
+            ip_name=ip_name,
+            benefit_point=benefit_point,
+            primary_asset_id=primary.id,
+            secondary_asset_ids=[],
+            competitor_note_id=note.id,
+            status="published",
+            publish_time=publish_time,
+            note_id=note_id,
+        )
+        db.add(package)
+        mark_primary_asset_used(db, primary.id)
+        created.append(package)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="有主图已被绑定到其他套件") from exc
+    for package in created:
+        db.refresh(package)
+    return created
+
+
+def update_draft_images(db: Session, package_id: int, payload: PackageImagesUpdateIn) -> ContentPackage:
+    package = db.get(ContentPackage, package_id)
+    if package is None:
+        raise HTTPException(status_code=404, detail="套件不存在")
+    if package.status != "draft":
+        raise HTTPException(status_code=400, detail="只有未导出的草稿可以修改主图和次图")
+
+    primary = db.get(Asset, payload.primary_asset_id)
+    if primary is None or primary.type != "primary":
+        raise HTTPException(status_code=400, detail="请选择一张主图")
+    if primary.id != package.primary_asset_id and primary.is_used:
+        raise HTTPException(status_code=400, detail="该主图已被使用")
+
+    secondary_ids: list[int] = []
+    for asset_id in payload.secondary_asset_ids:
+        asset = db.get(Asset, asset_id)
+        if asset is None or asset.type != "secondary":
+            raise HTTPException(status_code=400, detail=f"次图不存在或类型错误: {asset_id}")
+        if asset_id not in secondary_ids:
+            secondary_ids.append(asset_id)
+
+    previous_primary_id = package.primary_asset_id
+    package.primary_asset_id = primary.id
+    package.secondary_asset_ids = secondary_ids
+    flag_modified(package, "secondary_asset_ids")
+    db.flush()
+    if primary.id != previous_primary_id:
+        mark_primary_asset_used(db, primary.id)
+        release_primary_if_unbound(db, previous_primary_id)
     try:
         db.commit()
     except IntegrityError as exc:

@@ -368,6 +368,19 @@ export async function deletePackage(id: number): Promise<void> {
   if (!response.ok) throw new Error(await parseError(response))
 }
 
+export async function updatePackageImages(
+  id: number,
+  input: { primary_asset_id: number; secondary_asset_ids: number[] },
+): Promise<ContentPackage> {
+  const response = await fetch(`/api/packages/${id}/images`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return (await response.json()) as ContentPackage
+}
+
 export async function createPackage(input: {
   title: string
   ip_name: string
@@ -383,6 +396,19 @@ export async function createPackage(input: {
   })
   if (!response.ok) throw new Error(await parseError(response))
   return (await response.json()) as ContentPackage
+}
+
+export async function recommendSecondaries(input: {
+  ip_name: string
+  benefit_point: string
+}): Promise<{ asset_ids: number[]; summary: string; matched_benefit: boolean }> {
+  const response = await fetch('/api/packages/recommend-secondaries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return (await response.json()) as { asset_ids: number[]; summary: string; matched_benefit: boolean }
 }
 
 export async function exportPackages(packageIds: number[]): Promise<void> {
@@ -449,4 +475,54 @@ export async function publishPackage(
   })
   if (!response.ok) throw new Error(await parseError(response))
   return (await response.json()) as ContentPackage
+}
+
+export async function publishDirect(input: {
+  title: string
+  ip_name: string
+  benefit_point: string
+  primary_asset_ids: number[]
+  note_id?: string
+  publish_time?: string
+}): Promise<ContentPackage[]> {
+  const response = await fetch('/api/packages/publish-direct', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  const data = (await response.json()) as { items: ContentPackage[] }
+  return data.items
+}
+
+export type ImageSet = {
+  id: number
+  name: string
+  asset_ids: number[]
+  created_at: string
+}
+
+export async function fetchImageSets(): Promise<ImageSet[]> {
+  const response = await fetch('/api/image-sets')
+  if (!response.ok) throw new Error(await parseError(response))
+  const data = (await response.json()) as { items: ImageSet[] }
+  return data.items
+}
+
+export async function createImageSet(input: {
+  name: string
+  asset_ids: number[]
+}): Promise<ImageSet> {
+  const response = await fetch('/api/image-sets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) throw new Error(await parseError(response))
+  return (await response.json()) as ImageSet
+}
+
+export async function deleteImageSet(id: number): Promise<void> {
+  const response = await fetch(`/api/image-sets/${id}`, { method: 'DELETE' })
+  if (!response.ok) throw new Error(await parseError(response))
 }

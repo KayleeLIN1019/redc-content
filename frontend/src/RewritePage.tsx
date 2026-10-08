@@ -29,33 +29,41 @@ import {
   Textarea,
 } from './ui'
 
+const LINK_SLOTS = 3
 const MAX_REWRITE_BATCH = 40
+const NOTE_SPLIT = '—— 下一篇 ——'
 
-function splitRewriteJobs(
-  rawLink: string,
+function splitBlocks(content: string): string[] {
+  if (!content.trim()) return []
+  if (!new RegExp(`^\\s*${NOTE_SPLIT}\\s*$`, 'm').test(content)) return [content.trim()]
+  return content.split(new RegExp(`^\\s*${NOTE_SPLIT}\\s*$`, 'm')).map((item) => item.trim())
+}
+
+function composeSlotContent(parts: string[]): string {
+  let end = parts.length
+  while (end > 0 && !parts[end - 1].trim()) end -= 1
+  if (end === 0) return ''
+  if (end === 1) return parts[0].trim()
+  return parts.slice(0, end).join(`\n\n${NOTE_SPLIT}\n\n`)
+}
+
+function buildRewriteJobs(
+  links: string[],
   rawContent: string,
 ): { raw_link?: string; raw_content?: string }[] {
-  const links = rawLink
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-  const content = rawContent.trim()
-  const blocks = content
-    ? content.split(/^\s*---\s*$/m).map((item) => item.trim()).filter(Boolean)
-    : []
-  if (blocks.length === 0 && links.length === 0) return []
-  if (blocks.length <= 1 && links.length <= 1) {
-    const job: { raw_link?: string; raw_content?: string } = {}
-    if (links[0]) job.raw_link = links[0]
-    if (blocks[0]) job.raw_content = blocks[0]
-    return [job]
+  const blocks = splitBlocks(rawContent)
+  const filled = links.map((item) => item.trim()).filter(Boolean)
+  if (filled.length === 0) {
+    return blocks.filter(Boolean).map((block) => ({ raw_content: block }))
   }
-  const count = Math.max(blocks.length, links.length)
-  return Array.from({ length: count }, (_, index) => {
-    const job: { raw_link?: string; raw_content?: string } = {}
-    if (links[index]) job.raw_link = links[index]
-    if (blocks[index]) job.raw_content = blocks[index]
-    return job
+  const aligned = blocks.length === links.length
+  return links.flatMap((raw, index) => {
+    const link = raw.trim()
+    if (!link) return []
+    const job: { raw_link?: string; raw_content?: string } = { raw_link: link }
+    if (aligned && blocks[index]?.trim()) job.raw_content = blocks[index].trim()
+    else if (filled.length === 1 && blocks.length === 1) job.raw_content = blocks[0]
+    return [job]
   })
 }
 
@@ -82,7 +90,7 @@ function formatTime(value: string): string {
 function RewritePage() {
   const [ipNames, setIpNames] = useState<string[]>([])
   const [ipName, setIpName] = useState('')
-  const [rawLink, setRawLink] = useState('')
+  const [linkSlots, setLinkSlots] = useState<string[]>(() => Array.from({ length: LINK_SLOTS }, () => ''))
   const [rawContent, setRawContent] = useState('')
   const [notes, setNotes] = useState<Note[]>([])
   const [current, setCurrent] = useState<Note | null>(null)
@@ -127,16 +135,22 @@ function RewritePage() {
     setCurrent(note)
     setDraftEdit(editableCopy(note))
     setIpName(note.ip_name)
-    setRawLink(note.raw_link || '')
+    setLinkSlots([note.raw_link || '', ...Array.from({ length: LINK_SLOTS - 1 }, () => '')])
     setRawContent(note.raw_content || '')
   }
+
+  const filledLinkCount = linkSlots.filter((item) => item.trim()).length
+  const rewriteJobs = useMemo(
+    () => buildRewriteJobs(linkSlots, rawContent),
+    [linkSlots, rawContent],
+  )
 
   async function collectSource(): Promise<{ link: string; content: string } | null> {
     if (!ipName) {
       flash('请先在设置中添加 IP 技能 Prompt', true)
       return null
     }
-    const link = rawLink.trim()
+    const link = linkSlots.map((item) => item.trim()).filter(Boolean)[0] || ''
     const content = rawContent.trim()
     if (!link && !content) {
       flash('请粘贴竞品链接或正文', true)
@@ -145,38 +159,51 @@ function RewritePage() {
     return { link, content }
   }
 
+  function setLinkSlot(index: number, value: string) {
+    setLinkSlots((current) => current.map((item, slot) => (slot === index ? value : item)))
+  }
+
   async function onParseLinks() {
-    const links = rawLink
-      .split(/\r?\n/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-    if (links.length === 0) {
+    const targets = linkSlots
+      .map((item, index) => ({ index, url: item.trim() }))
+      .filter((item) => item.url)
+    if (targets.length === 0) {
       flash('请先粘贴竞品链接', true)
       return
     }
     setParsing(true)
     try {
-      const chunks: string[] = []
+      const parts = Array.from({ length: LINK_SLOTS }, () => '')
       const failed: string[] = []
-      for (const url of links) {
-        try {
-          const parsed = await parseNoteLink(url)
-          chunks.push(parsed.content)
-        } catch (err) {
-          failed.push(err instanceof Error ? err.message : url)
-        }
+      const results = await Promise.all(
+        targets.map(async (target) => {
+          try {
+            const parsed = await parseNoteLink(target.url)
+            return { index: target.index, content: parsed.content, error: '' }
+          } catch (err) {
+            return {
+              index: target.index,
+              content: '',
+              error: err instanceof Error ? err.message : target.url,
+            }
+          }
+        }),
+      )
+      for (const result of results) {
+        if (result.error) failed.push(result.error)
+        else parts[result.index] = result.content
       }
-      if (chunks.length > 0) {
-        setRawContent(chunks.join('\n\n---\n\n'))
+      if (parts.some((item) => item.trim())) {
+        setRawContent(composeSlotContent(parts))
       }
-      if (failed.length > 0 && chunks.length === 0) {
+      if (failed.length > 0 && parts.every((item) => !item.trim())) {
         flash(failed[0], true)
         return
       }
       flash(
         failed.length
-          ? `已解析 ${chunks.length} 条，失败 ${failed.length} 条：${failed[0]}`
-          : `已解析 ${chunks.length} 条正文，可检查后点「AI 一键改写」`,
+          ? `已同时解析 ${targets.length - failed.length} 条，失败 ${failed.length} 条：${failed[0]}`
+          : `已同时解析 ${targets.length} 条正文，可检查后点「AI 一键改写」`,
       )
     } finally {
       setParsing(false)
@@ -192,7 +219,7 @@ function RewritePage() {
       flash('未配置 API Key，请到设置填写，或改用「保存原文」', true)
       return
     }
-    const jobs = splitRewriteJobs(rawLink, rawContent)
+    const jobs = rewriteJobs
     if (jobs.length === 0) {
       flash('请粘贴竞品链接或正文', true)
       return
@@ -226,11 +253,11 @@ function RewritePage() {
         setDraftEdit(formatPublishCopy(created[0].ai_draft || ''))
       }
       const failed = result.errors.length
-      flash(
-        failed
-          ? `已并发生成 ${created.length} 条，失败 ${failed} 条：${result.errors.map((item) => `#${item.index + 1} ${item.detail}`).join('；')}`
-          : `已并发改写 ${created.length} 条（最多 ${maxConcurrency} 路），可点开记录微调定稿`,
-      )
+        flash(
+          failed
+            ? `已并发生成 ${created.length} 篇，失败 ${failed} 篇：${result.errors.map((item) => `#${item.index + 1} ${item.detail}`).join('；')}`
+            : `已一键改写 ${created.length} 篇（最多 ${maxConcurrency} 路），可点开记录微调定稿`,
+        )
     } catch (err) {
       flash(err instanceof Error ? err.message : '改写失败', true)
     } finally {
@@ -319,8 +346,9 @@ function RewritePage() {
       <Card>
         <CardTitle>输入竞品</CardTitle>
         <CardHint>
-          选择 IP，粘贴小红书链接后点「解析链接」。多条正文用单独一行的{' '}
-          <code className="rounded bg-muted px-1 font-mono text-xs">---</code> 分隔，多条链接每行一个。解析失败时再手动粘贴原文。
+          一次可填 3 条小红书链接。点「解析链接」会同时抓取，每条链接对应一篇。正文之间用单独一行的{' '}
+          <code className="rounded bg-muted px-1 font-mono text-xs">{NOTE_SPLIT}</code>{' '}
+          隔开，笔记里原有的 --- 不会被当成新的一篇。
         </CardHint>
 
         {loading ? (
@@ -350,16 +378,27 @@ function RewritePage() {
                 ))}
               </Select>
             </label>
-            <label className="block text-sm">
-              <FieldLabel>竞品链接</FieldLabel>
-              <Input
-                value={rawLink}
-                onChange={(event) => setRawLink(event.target.value)}
-                placeholder="小红书笔记链接，多条请每行一个"
-              />
-            </label>
-            <Button variant="secondary" disabled={parsing || !rawLink.trim()} onClick={() => void onParseLinks()}>
-              {parsing ? '解析中…' : '解析链接'}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <FieldLabel>竞品链接</FieldLabel>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {filledLinkCount} / {LINK_SLOTS}
+                </span>
+              </div>
+              {linkSlots.map((value, index) => (
+                <label key={index} className="block text-sm">
+                  <span className="mb-1 block text-xs text-muted-foreground">链接 {index + 1}</span>
+                  <Input
+                    value={value}
+                    onChange={(event) => setLinkSlot(index, event.target.value)}
+                    placeholder={index === 0 ? '小红书笔记链接' : '可选，再贴一条'}
+                    aria-label={`竞品链接 ${index + 1}`}
+                  />
+                </label>
+              ))}
+            </div>
+            <Button variant="secondary" disabled={parsing || filledLinkCount === 0} onClick={() => void onParseLinks()}>
+              {parsing ? '同时解析中…' : filledLinkCount > 1 ? `同时解析 ${filledLinkCount} 条链接` : '解析链接'}
             </Button>
             <label className="block text-sm">
               <FieldLabel>正文（解析后可改，也可手贴）</FieldLabel>
@@ -367,12 +406,16 @@ function RewritePage() {
                 value={rawContent}
                 onChange={(event) => setRawContent(event.target.value)}
                 rows={8}
-                placeholder="点「解析链接」自动填入，或自己粘贴原文。多条请用单独一行 --- 隔开"
+                placeholder="点「解析链接」自动填入，或自己粘贴原文。多条链接解析后会按顺序分篇"
               />
             </label>
             <div className="flex flex-wrap items-center gap-3">
-              <Button disabled={rewriting || !hasApiKey} onClick={() => void onRewrite()}>
-                {rewriting ? `改写中（最多 ${maxConcurrency} 路）…` : 'AI 一键改写'}
+              <Button disabled={rewriting || !hasApiKey || rewriteJobs.length === 0} onClick={() => void onRewrite()}>
+                {rewriting
+                  ? `改写中（最多 ${maxConcurrency} 路）…`
+                  : filledLinkCount > 1
+                    ? `AI 一键改写 ${filledLinkCount} 篇`
+                    : 'AI 一键改写'}
               </Button>
               <Button variant="secondary" disabled={savingManual} onClick={() => void onSaveManual()}>
                 {savingManual ? '保存中…' : '保存原文（不调用 AI）'}

@@ -105,6 +105,17 @@ class TagCatalog(Base):
     )
 
 
+class ImageSet(Base):
+    __tablename__ = "image_sets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    asset_ids: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+
 class SystemSetting(Base):
     __tablename__ = "system_settings"
     __table_args__ = (CheckConstraint("id = 1", name="ck_system_settings_singleton"),)

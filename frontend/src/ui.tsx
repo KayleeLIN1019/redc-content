@@ -315,7 +315,7 @@ export function Combobox({
 
   return (
     <div ref={rootRef} className={cx('relative min-w-0 flex-1', open && 'z-30', className)}>
-      <div className="field flex items-center rounded-xl px-2.5 py-1.5">
+      <div className="field flex items-center rounded-md px-1.5 py-0.5">
         <input
           value={value}
           onChange={(event) => {
@@ -332,7 +332,7 @@ export function Combobox({
             setOpenState(false)
           }}
           placeholder={placeholder}
-          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-snug text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[11px] leading-4 text-foreground outline-none placeholder:text-muted-foreground"
         />
         <button
           type="button"
@@ -340,10 +340,10 @@ export function Combobox({
           aria-expanded={open}
           aria-haspopup="listbox"
           onClick={() => setOpenState(!open)}
-          className="cursor-pointer rounded-md p-0.5 text-muted-foreground transition-colors duration-200 hover:text-foreground"
+          className="shrink-0 cursor-pointer rounded-md p-0.5 text-muted-foreground transition-colors duration-200 hover:text-foreground"
         >
           <ChevronDown
-            size={16}
+            size={12}
             strokeWidth={1.75}
             aria-hidden="true"
             className={cx('transition-transform duration-200', open && 'rotate-180')}
